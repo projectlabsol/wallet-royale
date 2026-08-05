@@ -1993,240 +1993,635 @@
     */
 
     const CONFIG = {
-      contractAddress: "COMING SOON",
+  contractAddress:
+    "2BwRUF9jvSHY6sNezEvLwFtw64w5FvkRpi2aw9zapump",
 
-      buyUrl: "#",
+  buyUrl:
+    "https://pump.fun/coin/2BwRUF9jvSHY6sNezEvLwFtw64w5FvkRpi2aw9zapump",
 
-      xUrl: "#",
+  xUrl: "#",
 
-      telegramUrl: "#"
-    };
+  telegramUrl: "#"
+};
 
-    const wallets = [
-      "8KjP...2LmQ",
-      "F7xR...9AbT",
-      "3NqV...6KsP",
-      "B4mT...1JwZ",
-      "H9cD...7RxK",
-      "2VyL...5QaN",
-      "Cp8X...4MtR",
-      "6LaF...3ZpW",
-      "9GsQ...8NbC",
-      "D5rH...2YkM",
-      "7WpB...6TvA",
-      "Ae3K...9UxP"
-    ];
+    /*
+  WALLET ROYALE — LIVE BLOCKCHAIN CONNECTION
+*/
 
-    const positions = [
-      [14, 20],
-      [40, 11],
-      [69, 18],
-      [83, 39],
-      [79, 70],
-      [58, 81],
-      [31, 82],
-      [12, 67],
-      [20, 45],
-      [49, 26],
-      [64, 55],
-      [39, 61]
-    ];
+const API_URL =
+  "https://wallet-royale-api.charlie2522024.workers.dev/holders";
 
-    const fightersContainer =
-      document.getElementById("fighters");
+const REFRESH_INTERVAL = 13000;
+const MAX_FIGHTERS = 36;
 
-    const activityFeed =
-      document.getElementById("activityFeed");
+const fightersContainer =
+  document.getElementById("fighters");
 
-    const contractAddress =
-      document.getElementById("contractAddress");
+const activityFeed =
+  document.getElementById("activityFeed");
 
-    const copyMessage =
-      document.getElementById("copyMessage");
+const contractAddress =
+  document.getElementById("contractAddress");
 
-    const buyButton =
-      document.getElementById("buyButton");
+const copyMessage =
+  document.getElementById("copyMessage");
 
-    const footerBuyLink =
-      document.getElementById("footerBuyLink");
+const buyButton =
+  document.getElementById("buyButton");
 
-    const xLink =
-      document.getElementById("xLink");
+const footerBuyLink =
+  document.getElementById("footerBuyLink");
 
-    const telegramLink =
-      document.getElementById("telegramLink");
+const xLink =
+  document.getElementById("xLink");
 
-    const connectWallet =
-      document.getElementById("connectWallet");
+const telegramLink =
+  document.getElementById("telegramLink");
 
-    contractAddress.textContent =
-      CONFIG.contractAddress;
+const connectWallet =
+  document.getElementById("connectWallet");
 
-    buyButton.href =
-      CONFIG.buyUrl;
+contractAddress.textContent =
+  CONFIG.contractAddress;
 
-    footerBuyLink.href =
-      CONFIG.buyUrl;
+buyButton.href =
+  CONFIG.buyUrl;
 
-    xLink.href =
-      CONFIG.xUrl;
+footerBuyLink.href =
+  CONFIG.buyUrl;
 
-    telegramLink.href =
-      CONFIG.telegramUrl;
+xLink.href =
+  CONFIG.xUrl;
 
-    wallets.forEach((wallet, index) => {
+telegramLink.href =
+  CONFIG.telegramUrl;
+
+let previousWallets = new Map();
+let initialized = false;
+let eliminatedThisSession = 0;
+let refreshing = false;
+
+function shortenWallet(wallet) {
+  if (
+    typeof wallet !== "string" ||
+    wallet.length < 10
+  ) {
+    return wallet;
+  }
+
+  return (
+    wallet.slice(0, 4) +
+    "..." +
+    wallet.slice(-4)
+  );
+}
+
+function setCounter(id, value) {
+  const element =
+    document.getElementById(id);
+
+  if (element) {
+    element.textContent =
+      String(value);
+  }
+}
+
+function updateCounters(activeWallets) {
+  setCounter(
+    "heroActive",
+    activeWallets
+  );
+
+  setCounter(
+    "activeWallets",
+    activeWallets
+  );
+
+  setCounter(
+    "eliminatedWallets",
+    eliminatedThisSession
+  );
+
+  setCounter(
+    "totalWallets",
+    activeWallets +
+      eliminatedThisSession
+  );
+}
+
+function createActivityItem(item) {
+  const wrapper =
+    document.createElement("div");
+
+  const information = {
+    buy: {
+      icon: "↘",
+      title: "NEW HOLDER"
+    },
+
+    sell: {
+      icon: "×",
+      title: "WALLET ELIMINATED"
+    },
+
+    sync: {
+      icon: "◆",
+      title: "BLOCKCHAIN SYNC"
+    },
+
+    error: {
+      icon: "!",
+      title: "CONNECTION ERROR"
+    }
+  };
+
+  const type =
+    information[item.type] ||
+    information.sync;
+
+  wrapper.className =
+    "feed-item " +
+    (
+      item.type === "sell"
+        ? "eliminated"
+        : ""
+    );
+
+  const icon =
+    document.createElement("div");
+
+  icon.className =
+    "feed-icon";
+
+  icon.textContent =
+    type.icon;
+
+  const content =
+    document.createElement("div");
+
+  const title =
+    document.createElement("strong");
+
+  title.textContent =
+    type.title;
+
+  const paragraph =
+    document.createElement("p");
+
+  if (item.wallet) {
+    const walletText =
+      document.createElement("b");
+
+    walletText.textContent =
+      item.wallet;
+
+    paragraph.appendChild(
+      walletText
+    );
+
+    paragraph.appendChild(
+      document.createTextNode(" ")
+    );
+  }
+
+  paragraph.appendChild(
+    document.createTextNode(
+      item.text
+    )
+  );
+
+  content.appendChild(title);
+  content.appendChild(paragraph);
+
+  wrapper.appendChild(icon);
+  wrapper.appendChild(content);
+
+  activityFeed.prepend(wrapper);
+
+  while (
+    activityFeed.children.length > 8
+  ) {
+    activityFeed.removeChild(
+      activityFeed.lastChild
+    );
+  }
+}
+
+function renderFighters(holders) {
+  fightersContainer.innerHTML = "";
+
+  const displayedHolders =
+    holders.slice(
+      0,
+      MAX_FIGHTERS
+    );
+
+  if (
+    displayedHolders.length === 0
+  ) {
+    const waiting =
+      document.createElement("div");
+
+    waiting.textContent =
+      "WAITING FOR THE FIRST HOLDER";
+
+    waiting.style.cssText = `
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      z-index: 8;
+      transform: translate(-50%, 95px);
+      width: max-content;
+      max-width: 85%;
+      padding: 10px 14px;
+      color: #c997ff;
+      font-family: "Orbitron", sans-serif;
+      font-size: 10px;
+      font-weight: 900;
+      letter-spacing: 1px;
+      text-align: center;
+      border: 1px solid rgba(216, 173, 255, 0.18);
+      border-radius: 10px;
+      background: rgba(11, 5, 20, 0.86);
+    `;
+
+    fightersContainer.appendChild(
+      waiting
+    );
+
+    return;
+  }
+
+  displayedHolders.forEach(
+    (holder, index) => {
       const fighter =
         document.createElement("div");
 
       fighter.className =
         "fighter";
 
+      const shortWallet =
+        holder.shortWallet ||
+        shortenWallet(
+          holder.wallet
+        );
+
       fighter.dataset.wallet =
-        wallet;
+        shortWallet;
 
       fighter.textContent =
-        String(index + 1).padStart(2, "0");
+        String(index + 1).padStart(
+          2,
+          "0"
+        );
+
+      /*
+        Distribute wallets around
+        the circular arena.
+      */
+
+      const angle =
+        index *
+        137.5 *
+        (
+          Math.PI / 180
+        );
+
+      const radius =
+        23 +
+        (
+          index % 3
+        ) *
+        9;
+
+      const left =
+        50 +
+        Math.cos(angle) *
+        radius;
+
+      const top =
+        50 +
+        Math.sin(angle) *
+        radius *
+        0.78;
 
       fighter.style.left =
-        positions[index][0] + "%";
+        left + "%";
 
       fighter.style.top =
-        positions[index][1] + "%";
+        top + "%";
 
       fighter.style.animationDelay =
-        index * 0.12 + "s";
+        (
+          index * 0.09
+        ) + "s";
 
-      fightersContainer.appendChild(fighter);
-    });
+      fighter.title =
+        holder.wallet;
 
-    const firstEvents = [
-      {
-        type: "buy",
-        wallet: "8KjP...2LmQ",
-        text: "entered the arena after buying."
-      },
+      fightersContainer.appendChild(
+        fighter
+      );
+    }
+  );
+}
 
-      {
-        type: "hold",
-        wallet: "F7xR...9AbT",
-        text: "is still holding and remains active."
-      },
+function renderLeaderboard(holders) {
+  const leaderboard =
+    document.querySelector(
+      ".leaderboard"
+    );
 
-      {
-        type: "sell",
-        wallet: "Q4nC...7PmL",
-        text: "sold everything and was eliminated."
-      },
+  if (!leaderboard) {
+    return;
+  }
 
-      {
-        type: "buy",
-        wallet: "3NqV...6KsP",
-        text: "joined the battle."
-      },
+  leaderboard.innerHTML = `
+    <div class="leader-row leader-head">
+      <span>RANK</span>
+      <span>WALLET</span>
+      <span>STATUS</span>
+      <span>LIVE DATA</span>
+    </div>
+  `;
 
-      {
-        type: "hold",
-        wallet: "H9cD...7RxK",
-        text: "sold part of the position and survived."
-      }
-    ];
+  const leaders =
+    holders.slice(0, 3);
 
-    function createActivityItem(item) {
-      const wrapper =
+  if (leaders.length === 0) {
+    const emptyRow =
+      document.createElement("div");
+
+    emptyRow.className =
+      "leader-row";
+
+    emptyRow.innerHTML = `
+      <strong>—</strong>
+      <span>Waiting for holders</span>
+      <span class="alive-badge">READY</span>
+      <span>ON-CHAIN</span>
+    `;
+
+    leaderboard.appendChild(
+      emptyRow
+    );
+
+    return;
+  }
+
+  leaders.forEach(
+    (holder, index) => {
+      const row =
         document.createElement("div");
 
-      wrapper.className =
-        "feed-item " +
-        (item.type === "sell" ? "eliminated" : "");
+      row.className =
+        "leader-row";
 
-      let icon = "◆";
-      let title = "HOLDER UPDATE";
+      row.innerHTML = `
+        <strong>#${index + 1}</strong>
 
-      if (item.type === "buy") {
-        icon = "↘";
-        title = "NEW BUYER";
-      }
+        <span>
+          ${
+            holder.shortWallet ||
+            shortenWallet(
+              holder.wallet
+            )
+          }
+        </span>
 
-      if (item.type === "sell") {
-        icon = "×";
-        title = "WALLET ELIMINATED";
-      }
+        <span class="alive-badge">
+          ALIVE
+        </span>
 
-      wrapper.innerHTML = `
-        <div class="feed-icon">${icon}</div>
-
-        <div>
-          <strong>${title}</strong>
-
-          <p>
-            <b>${item.wallet}</b>
-            ${item.text}
-          </p>
-        </div>
+        <span>
+          ON-CHAIN
+        </span>
       `;
 
-      activityFeed.prepend(wrapper);
-
-      while (activityFeed.children.length > 8) {
-        activityFeed.removeChild(
-          activityFeed.lastChild
-        );
-      }
+      leaderboard.appendChild(row);
     }
+  );
+}
 
-    firstEvents
-      .reverse()
-      .forEach(createActivityItem);
+function processWalletChanges(
+  currentWallets
+) {
+  if (!initialized) {
+    return;
+  }
 
-    function getRandomWallet() {
-      return wallets[
-        Math.floor(Math.random() * wallets.length)
-      ];
-    }
+  /*
+    Wallets newly holding the coin.
+  */
 
-    const automaticEvents = [
-      {
-        type: "buy",
-        text: "entered the arena after buying."
-      },
-
-      {
-        type: "hold",
-        text: "continues holding and remains active."
-      },
-
-      {
-        type: "hold",
-        text: "sold part of the position and survived."
-      },
-
-      {
-        type: "buy",
-        text: "joined the live battle."
-      }
-    ];
-
-    setInterval(() => {
-      const event =
-        automaticEvents[
-          Math.floor(
-            Math.random() * automaticEvents.length
-          )
-        ];
-
-      const wallet =
-        getRandomWallet();
+  for (
+    const [wallet]
+    of currentWallets
+  ) {
+    if (
+      !previousWallets.has(wallet)
+    ) {
+      const shortWallet =
+        shortenWallet(wallet);
 
       createActivityItem({
-        ...event,
-        wallet: wallet
+        type: "buy",
+
+        wallet: shortWallet,
+
+        text:
+          "now holds $WROY and entered the arena."
       });
 
-      document.getElementById(
-        "lastBuyer"
-      ).textContent = wallet;
-    }, 4300);
+      const lastBuyer =
+        document.getElementById(
+          "lastBuyer"
+        );
 
+      if (lastBuyer) {
+        lastBuyer.textContent =
+          shortWallet;
+      }
+    }
+  }
+
+  /*
+    Wallets that no longer
+    hold any tokens.
+  */
+
+  for (
+    const [wallet]
+    of previousWallets
+  ) {
+    if (
+      !currentWallets.has(wallet)
+    ) {
+      eliminatedThisSession++;
+
+      createActivityItem({
+        type: "sell",
+
+        wallet:
+          shortenWallet(wallet),
+
+        text:
+          "no longer holds tokens and was eliminated."
+      });
+    }
+  }
+}
+
+async function refreshLiveArena() {
+  if (refreshing) {
+    return;
+  }
+
+  refreshing = true;
+
+  try {
+    const response =
+      await fetch(
+        API_URL,
+        {
+          method: "GET",
+          cache: "no-store"
+        }
+      );
+
+    if (!response.ok) {
+      throw new Error(
+        "API request failed: " +
+        response.status
+      );
+    }
+
+    const data =
+      await response.json();
+
+    if (!data.ok) {
+      throw new Error(
+        data.error ||
+        "Blockchain API error"
+      );
+    }
+
+    const holders =
+      Array.isArray(data.holders)
+        ? data.holders
+        : [];
+
+    const activeWallets =
+      Number.isFinite(
+        Number(data.activeWallets)
+      )
+        ? Number(
+            data.activeWallets
+          )
+        : holders.length;
+
+    const currentWallets =
+      new Map();
+
+    holders.forEach(holder => {
+      if (holder.wallet) {
+        currentWallets.set(
+          holder.wallet,
+          holder
+        );
+      }
+    });
+
+    processWalletChanges(
+      currentWallets
+    );
+
+    updateCounters(
+      activeWallets
+    );
+
+    renderFighters(
+      holders
+    );
+
+    renderLeaderboard(
+      holders
+    );
+
+    if (!initialized) {
+      activityFeed.innerHTML = "";
+
+      if (
+        activeWallets === 0
+      ) {
+        createActivityItem({
+          type: "sync",
+
+          text:
+            "Arena connected. Waiting for the first holder."
+        });
+      } else {
+        createActivityItem({
+          type: "sync",
+
+          text:
+            activeWallets +
+            " live holders loaded from Solana."
+        });
+      }
+    }
+
+    previousWallets =
+      currentWallets;
+
+    initialized = true;
+  } catch (error) {
+    console.error(
+      "Wallet Royale connection error:",
+      error
+    );
+
+    createActivityItem({
+      type: "error",
+
+      text:
+        "Unable to update the arena. Retrying automatically."
+    });
+  } finally {
+    refreshing = false;
+  }
+}
+
+/*
+  Remove all simulated information
+  as soon as the page loads.
+*/
+
+activityFeed.innerHTML = "";
+
+updateCounters(0);
+
+renderFighters([]);
+
+renderLeaderboard([]);
+
+createActivityItem({
+  type: "sync",
+
+  text:
+    "Connecting to the Solana blockchain..."
+});
+
+/*
+  Initial request and continuous updates.
+*/
+
+refreshLiveArena();
+
+setInterval(
+  refreshLiveArena,
+  REFRESH_INTERVAL
+);
     document
       .getElementById("copyContract")
       .addEventListener("click", async () => {
