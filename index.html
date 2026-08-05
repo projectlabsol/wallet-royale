@@ -2370,5 +2370,239 @@
     resizeStars();
     drawStars();
   </script>
+<script>
+(function () {
+  let audioContext = null;
+  let masterGain = null;
+  let musicInterval = null;
+  let musicStarted = false;
+
+  const chordSequence = [
+    [110.00, 130.81, 164.81],
+    [98.00, 123.47, 146.83],
+    [82.41, 110.00, 130.81],
+    [92.50, 116.54, 146.83]
+  ];
+
+  function initializeAudio() {
+    if (audioContext) return;
+
+    audioContext = new (
+      window.AudioContext ||
+      window.webkitAudioContext
+    )();
+
+    masterGain = audioContext.createGain();
+    masterGain.gain.value = 0.055;
+    masterGain.connect(audioContext.destination);
+  }
+
+  function playSynthNote(frequency, startTime, duration) {
+    const oscillator = audioContext.createOscillator();
+    const gain = audioContext.createGain();
+    const filter = audioContext.createBiquadFilter();
+
+    oscillator.type = "sawtooth";
+    oscillator.frequency.setValueAtTime(
+      frequency,
+      startTime
+    );
+
+    filter.type = "lowpass";
+    filter.frequency.setValueAtTime(
+      650,
+      startTime
+    );
+
+    filter.Q.setValueAtTime(
+      2,
+      startTime
+    );
+
+    gain.gain.setValueAtTime(
+      0.0001,
+      startTime
+    );
+
+    gain.gain.exponentialRampToValueAtTime(
+      0.11,
+      startTime + 0.35
+    );
+
+    gain.gain.exponentialRampToValueAtTime(
+      0.0001,
+      startTime + duration
+    );
+
+    oscillator.connect(filter);
+    filter.connect(gain);
+    gain.connect(masterGain);
+
+    oscillator.start(startTime);
+    oscillator.stop(startTime + duration + 0.1);
+  }
+
+  function playBassNote(frequency, startTime, duration) {
+    const oscillator = audioContext.createOscillator();
+    const gain = audioContext.createGain();
+
+    oscillator.type = "sine";
+
+    oscillator.frequency.setValueAtTime(
+      frequency / 2,
+      startTime
+    );
+
+    gain.gain.setValueAtTime(
+      0.0001,
+      startTime
+    );
+
+    gain.gain.exponentialRampToValueAtTime(
+      0.16,
+      startTime + 0.15
+    );
+
+    gain.gain.exponentialRampToValueAtTime(
+      0.0001,
+      startTime + duration
+    );
+
+    oscillator.connect(gain);
+    gain.connect(masterGain);
+
+    oscillator.start(startTime);
+    oscillator.stop(startTime + duration + 0.1);
+  }
+
+  function playSequence() {
+    if (
+      !audioContext ||
+      audioContext.state !== "running"
+    ) {
+      return;
+    }
+
+    const startTime =
+      audioContext.currentTime + 0.1;
+
+    chordSequence.forEach((chord, chordIndex) => {
+      const chordStart =
+        startTime + chordIndex * 2.2;
+
+      chord.forEach((frequency, noteIndex) => {
+        playSynthNote(
+          frequency * (noteIndex === 2 ? 2 : 1),
+          chordStart,
+          2
+        );
+      });
+
+      playBassNote(
+        chord[0],
+        chordStart,
+        2.1
+      );
+    });
+  }
+
+  async function startMusic() {
+    initializeAudio();
+
+    if (audioContext.state === "suspended") {
+      await audioContext.resume();
+    }
+
+    if (
+      audioContext.state !== "running" ||
+      musicStarted
+    ) {
+      return;
+    }
+
+    musicStarted = true;
+
+    playSequence();
+
+    musicInterval = setInterval(
+      playSequence,
+      8800
+    );
+
+    removeUnlockEvents();
+  }
+
+  function unlockMusic() {
+    startMusic().catch(() => {});
+  }
+
+  function addUnlockEvents() {
+    document.addEventListener(
+      "pointerdown",
+      unlockMusic
+    );
+
+    document.addEventListener(
+      "touchstart",
+      unlockMusic
+    );
+
+    document.addEventListener(
+      "keydown",
+      unlockMusic
+    );
+  }
+
+  function removeUnlockEvents() {
+    document.removeEventListener(
+      "pointerdown",
+      unlockMusic
+    );
+
+    document.removeEventListener(
+      "touchstart",
+      unlockMusic
+    );
+
+    document.removeEventListener(
+      "keydown",
+      unlockMusic
+    );
+  }
+
+  window.addEventListener(
+    "load",
+    function () {
+      startMusic().catch(() => {
+        addUnlockEvents();
+      });
+
+      setTimeout(() => {
+        if (
+          !audioContext ||
+          audioContext.state !== "running"
+        ) {
+          addUnlockEvents();
+        }
+      }, 800);
+    },
+    { once: true }
+  );
+
+  document.addEventListener(
+    "visibilitychange",
+    function () {
+      if (
+        document.visibilityState === "visible" &&
+        audioContext &&
+        audioContext.state === "suspended"
+      ) {
+        audioContext.resume().catch(() => {});
+      }
+    }
+  );
+})();
+</script>
+  
 </body>
 </html>
